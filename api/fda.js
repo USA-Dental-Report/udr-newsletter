@@ -9,6 +9,31 @@
 
 const DENTAL_TERMS = /dental|dent|oral|tooth|teeth|implant|crown|filling|composite|curing|autoclave|steriliz|endodontic|periodon|orthodon|cbct|intraoral|x-ray|radiograph/i;
 
+function decodeXmlEntities(str) {
+  return str
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+function extractTag(block, tag) {
+  const match = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, 'i'));
+  return match ? decodeXmlEntities(match[1].trim()) : '';
+}
+
+function parseRssItems(xml) {
+  const itemBlocks = xml.match(/<item>[\s\S]*?<\/item>/gi) || [];
+  return itemBlocks.map(block => ({
+    title: extractTag(block, 'title'),
+    link: extractTag(block, 'link'),
+    pubDate: extractTag(block, 'pubDate'),
+    description: extractTag(block, 'description'),
+  }));
+}
+
 export default async function handler(req, res) {
   const { type, from, to } = req.query;
 
@@ -19,6 +44,10 @@ export default async function handler(req, res) {
       }
       const url = `https://api.fda.gov/device/510k.json?search=advisory_committee:"DE"+AND+decision_date:[${from}+TO+${to}]&limit=20&sort=decision_date:desc`;
       const response = await fetch(url);
+      if (response.status === 404) {
+        // openFDA returns 404 when a search matches zero records — not an error.
+        return res.status(200).json({ results: [] });
+      }
       if (!response.ok) {
         throw new Error(`FDA API ${response.status}`);
       }
@@ -28,17 +57,14 @@ export default async function handler(req, res) {
 
     if (type === 'alerts') {
       const ALERTS_RSS = 'https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/medwatch-safety-alerts/rss.xml';
-      const url = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(ALERTS_RSS)}&count=50`;
-      const response = await fetch(url);
+      const response = await fetch(ALERTS_RSS);
       if (!response.ok) {
-        throw new Error('Network error fetching FDA RSS feed');
+        throw new Error(`FDA RSS feed ${response.status}`);
       }
-      const data = await response.json();
-      if (data.status !== 'ok') {
-        throw new Error(data.message || 'Feed error');
-      }
+      const xml = await response.text();
+      const allItems = parseRssItems(xml);
 
-      const items = (data.items || []).filter(item =>
+      const items = allItems.filter(item =>
         DENTAL_TERMS.test((item.title || '') + ' ' + (item.description || ''))
       );
 
