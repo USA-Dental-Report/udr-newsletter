@@ -84,7 +84,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text-primar
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── LAYOUT ── */
-.layout { display: grid; grid-template-columns: 230px 1fr 280px; width: 100%; height: calc(100vh - 45px); min-width: 0; }
+.layout { display: grid; grid-template-columns: 260px 1fr 380px; width: 100%; height: calc(100vh - 45px); min-width: 0; }
 
 /* ── SIDEBAR: FEEDS ── */
 .feed-panel {
@@ -131,7 +131,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text-primar
 
 .feed-item.builtin { background: var(--fda-bg); border-color: var(--fda-border); }
 .feed-item.builtin .feed-label { color: var(--fda-text); }
-.feed-item.builtin .feed-url { color: var(--fda-text); opacity: 0.65; }
+.feed-item.builtin .feed-url { color: var(--fda-text); opacity: 0.65; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.4; }
 .builtin-lock { font-size: 10px; color: var(--fda-text); opacity: 0.7; }
 
 .type-badge {
@@ -154,7 +154,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text-primar
 .add-feed-form.hidden { display: none; }
 .form-row { display: flex; gap: 0.375rem; }
 .form-input {
-  flex: 1; font-family: var(--sans); font-size: 12.5px;
+  flex: 1; min-width: 0; font-family: var(--sans); font-size: 12.5px;
   background: var(--surface); border: 1px solid var(--border-strong);
   border-radius: 5px; padding: 0.4rem 0.6rem; outline: none; color: var(--text-primary);
   transition: border-color 0.12s;
@@ -162,7 +162,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text-primar
 .form-input:focus { border-color: var(--accent); }
 .form-input::placeholder { color: var(--text-muted); }
 .form-select {
-  font-family: var(--sans); font-size: 12px;
+  flex-shrink: 0; min-width: 5.25rem; font-family: var(--sans); font-size: 12px;
   background: var(--surface); border: 1px solid var(--border-strong);
   border-radius: 5px; padding: 0.4rem 0.5rem; outline: none; cursor: pointer;
   color: var(--text-primary);
