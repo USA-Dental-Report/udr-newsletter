@@ -12,11 +12,30 @@ Weekly content generation tool for USA Dental Report. Pulls from RSS feeds + FDA
 udr-newsletter/
 ├── index.html          # The app
 ├── api/
-│   └── generate.js     # Vercel serverless function (holds Anthropic API key)
+│   ├── generate.js      # Vercel serverless function (holds Anthropic API key)
+│   ├── fda.js           # Serverless function — FDA 510(k) + MedWatch alerts
+│   └── feed.js          # Serverless function — fetches/parses any RSS/Atom feed
 ├── vercel.json         # Routing config
 ├── .env.example        # Environment variable template
 └── .gitignore
 ```
+
+---
+
+## Built-in sources
+
+These are hardcoded into the app (locked, non-removable in the UI) and are always fetched on load/refresh, in addition to any feeds you add yourself via the **+** button:
+
+| Source | Type | URL |
+|---|---|---|
+| ADA News | News | `http://www.ada.org/en/ada-news-rss` |
+| Becker's Dental | News | `https://www.beckersdental.com/?format=feed` |
+| Dental Podcast | Podcast | `https://dentalpodcast.org/feed/?post_type=podcast-episode` |
+| USA Dental Report | News | `https://rss.beehiiv.com/feeds/tuw0IXKQhc.xml` |
+| Dental 510(k) Clearances | FDA | openFDA API — `advisory_committee: Dental` |
+| CDRH Safety Alerts | FDA | FDA MedWatch RSS — device recalls & alerts |
+
+Sources added via the UI are stored in the browser's `localStorage`, not server-side — they won't carry over across devices/browsers or between Vercel preview deployment URLs. To add or remove a built-in source permanently, edit the `BUILTIN_FEEDS` array in `index.html` (or the FDA-specific logic in `api/fda.js`) and redeploy.
 
 ---
 
