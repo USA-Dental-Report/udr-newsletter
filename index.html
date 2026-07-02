@@ -865,7 +865,7 @@ async function fetchFeed(feed) {
         return !isNaN(pub) ? pub >= cutoff : true;
       })
       .map(item => ({
-        id: btoa(item.link || item.title || Math.random()).slice(0, 16),
+        id: hashId(item.link || item.title || String(Math.random())),
         feedId: feed.id,
         feedName: feed.name,
         feedType: feed.type,
@@ -988,7 +988,7 @@ async function fetchFdaAlerts() {
         return recentEnough && relevant;
       })
       .map(item => ({
-        id: 'fdaalert_' + btoa(item.link || item.title || Math.random()).slice(0, 14),
+        id: 'fdaalert_' + hashId(item.link || item.title || String(Math.random())),
         feedId: SOURCE_ID,
         feedName: 'FDA CDRH Alerts',
         feedType: 'fda',
@@ -1618,6 +1618,15 @@ function clearError() { document.getElementById('error-strip').style.display = '
 
 function escHtml(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Stable id from a full string (e.g. an item link) — unlike btoa(...).slice(),
+// every character contributes, so items that only differ near the end of a
+// long shared URL prefix don't collide onto the same id.
+function hashId(str) {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) hash = ((hash << 5) + hash + str.charCodeAt(i)) | 0;
+  return (hash >>> 0).toString(36);
 }
 
 // ── KEYBOARD ──
