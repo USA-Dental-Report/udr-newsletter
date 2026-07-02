@@ -1016,6 +1016,7 @@ async function fetchFdaAlerts() {
 function stripHtml(html) {
   const d = document.createElement('div');
   d.innerHTML = html;
+  d.querySelectorAll('style, script').forEach(el => el.remove());
   return (d.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 240);
 }
 
