@@ -715,7 +715,6 @@ let currentOutputs = { linkedin: '', beehiiv: '', posts: [] };
 let currentOutputTab = 'linkedin';
 let fetchInProgress = false;
 
-const PROXY = 'https://api.rss2json.com/v1/api.json?rss_url=';
 const STORAGE_FEEDS = 'udr_feeds';
 const STORAGE_SETTINGS = 'udr_settings';
 const STORAGE_SCHEDULE = 'udr_schedule';
@@ -819,10 +818,9 @@ async function fetchFeed(feed) {
   renderFeedList();
 
   try {
-    const res = await fetch(PROXY + encodeURIComponent(feed.url) + '&count=30');
-    if (!res.ok) throw new Error('Network error');
+    const res = await fetch('/api/feed?url=' + encodeURIComponent(feed.url));
     const data = await res.json();
-    if (data.status !== 'ok') throw new Error(data.message || 'Feed error');
+    if (!res.ok || data.status !== 'ok') throw new Error(data.message || 'Feed error');
 
     const daysBack = parseInt(document.getElementById('days-select')?.value || '7');
     const cutoff = new Date();
