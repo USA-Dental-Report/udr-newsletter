@@ -937,8 +937,8 @@ async function fetchFdaAlerts() {
 
   try {
     const res = await fetch('/api/fda?type=alerts');
-    if (!res.ok) throw new Error('Network error');
     const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || data.error || 'Network error');
     if (data.status !== 'ok') throw new Error(data.message || 'Feed error');
 
     const daysBack = parseInt(document.getElementById('days-select')?.value || '7');

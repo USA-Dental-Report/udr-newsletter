@@ -57,7 +57,14 @@ export default async function handler(req, res) {
 
     if (type === 'alerts') {
       const ALERTS_RSS = 'https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/medwatch-safety-alerts/rss.xml';
-      const response = await fetch(ALERTS_RSS);
+      // www.fda.gov sits behind bot protection that 403s requests without
+      // browser-like headers, unlike the api.fda.gov open-data endpoints.
+      const response = await fetch(ALERTS_RSS, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+        },
+      });
       if (!response.ok) {
         throw new Error(`FDA RSS feed ${response.status}`);
       }
