@@ -118,7 +118,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text-primar
 }
 .feed-item-top { display: flex; align-items: center; gap: 0.375rem; }
 .feed-label { font-size: 11.5px; font-weight: 500; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.feed-url { font-size: 10px; color: var(--text-muted); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.feed-url { font-size: 10px; color: var(--text-muted); font-family: var(--mono); white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.4; word-break: break-all; }
 .feed-bottom { display: flex; align-items: center; justify-content: space-between; margin-top: 1px; }
 .feed-status { font-size: 10px; display: flex; align-items: center; gap: 3px; }
 .status-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--text-muted); }
@@ -131,7 +131,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text-primar
 
 .feed-item.builtin { background: var(--fda-bg); border-color: var(--fda-border); }
 .feed-item.builtin .feed-label { color: var(--fda-text); }
-.feed-item.builtin .feed-url { color: var(--fda-text); opacity: 0.65; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.4; }
+.feed-item.builtin .feed-url { color: var(--fda-text); opacity: 0.65; }
 .builtin-lock { font-size: 10px; color: var(--fda-text); opacity: 0.7; }
 
 .type-badge {
@@ -458,6 +458,12 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text-primar
       </div>
     </div>
 
+    <!-- Built-in news/podcast sources -->
+    <div style="border-top: 1px solid var(--border); padding: 0.5rem;">
+      <div style="font-size:10px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; color:var(--text-muted); padding: 0.375rem 0.25rem 0.375rem;">Built-in sources</div>
+      <div id="builtin-feed-list"></div>
+    </div>
+
     <!-- FDA built-in sources -->
     <div style="border-top: 1px solid var(--border); padding: 0.5rem;">
       <div style="font-size:10px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; color:var(--text-muted); padding: 0.375rem 0.25rem 0.375rem;">Built-in FDA sources</div>
@@ -706,6 +712,14 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text-primar
 </div>
 
 <script>
+// ── BUILT-IN SOURCES (hardcoded, not user-removable) ──
+const BUILTIN_FEEDS = [
+  { id: 'builtin_ada', name: 'ADA News', url: 'http://www.ada.org/en/ada-news-rss', type: 'news', status: 'pending', itemCount: 0 },
+  { id: 'builtin_beckers', name: "Becker's Dental", url: 'https://www.beckersdental.com/?format=feed', type: 'news', status: 'pending', itemCount: 0 },
+  { id: 'builtin_dentalpodcast', name: 'Dental Podcast', url: 'https://dentalpodcast.org/feed/?post_type=podcast-episode', type: 'podcast', status: 'pending', itemCount: 0 },
+  { id: 'builtin_udr', name: 'USA Dental Report', url: 'https://rss.beehiiv.com/feeds/tuw0IXKQhc.xml', type: 'news', status: 'pending', itemCount: 0 },
+];
+
 // ── STATE ──
 let feeds = [];
 let allItems = [];
@@ -727,8 +741,8 @@ function init() {
   loadSchedule();
   updateScheduleBadge();
   renderLastRun();
-  if (feeds.length) refreshFeeds();
-  else { fetchFdaDental(); fetchFdaAlerts(); }
+  renderBuiltinFeedList();
+  refreshFeeds();
   startScheduleChecker();
 }
 
@@ -753,7 +767,7 @@ function addFeed() {
   const name = document.getElementById('feed-name').value.trim();
   const type = document.getElementById('feed-type').value;
   if (!url) return;
-  if (feeds.find(f => f.url === url)) { showError('That feed is already added.'); return; }
+  if (feeds.find(f => f.url === url) || BUILTIN_FEEDS.find(f => f.url === url)) { showError('That feed is already added.'); return; }
 
   const feed = { id: Date.now().toString(), url, name: name || url, type, status: 'pending', itemCount: 0 };
   feeds.push(feed);
@@ -775,6 +789,35 @@ function removeFeed(id) {
   renderItems();
 }
 
+function feedStatusDot(status) {
+  return ({ ok: 'ok', err: 'err', loading: 'loading', pending: 'loading' })[status] || 'loading';
+}
+function feedStatusLabel(f) {
+  if (f.status === 'ok') return `${f.itemCount} items`;
+  if (f.status === 'err') return 'Error fetching';
+  if (f.status === 'loading') return 'Fetching...';
+  return 'Pending';
+}
+function feedCardHtml(f, removable) {
+  return `
+    <div class="feed-item">
+      <div class="feed-item-top">
+        <span class="type-badge ${f.type}">${f.type === 'news' ? 'News' : 'Podcast'}</span>
+        <span class="feed-label" title="${escHtml(f.name)}">${escHtml(f.name)}</span>
+        ${removable
+          ? `<button class="feed-remove" onclick="removeFeed('${f.id}')" title="Remove feed">×</button>`
+          : `<span class="builtin-lock" title="Built-in source">&#x1F512;</span>`}
+      </div>
+      <div class="feed-url" title="${escHtml(f.url)}">${escHtml(f.url)}</div>
+      <div class="feed-bottom">
+        <div class="feed-status">
+          <div class="status-dot ${feedStatusDot(f.status)}"></div>
+          <span style="font-size:11px; color:var(--text-muted)">${feedStatusLabel(f)}</span>
+        </div>
+      </div>
+    </div>`;
+}
+
 function renderFeedList() {
   const el = document.getElementById('feed-list');
   const empty = document.getElementById('feed-empty');
@@ -787,35 +830,25 @@ function renderFeedList() {
 
   if (!feeds.length) return;
 
-  const statusMap = { ok: 'ok', err: 'err', loading: 'loading', pending: 'loading' };
-  const statusLabel = { ok: f => `${f.itemCount} items`, err: 'Error fetching', loading: 'Fetching...', pending: 'Pending' };
-
   const frag = document.createDocumentFragment();
   feeds.forEach(f => {
     const div = document.createElement('div');
-    div.className = 'feed-item';
-    div.innerHTML = `
-      <div class="feed-item-top">
-        <span class="type-badge ${f.type}">${f.type === 'news' ? 'News' : 'Podcast'}</span>
-        <span class="feed-label" title="${f.name}">${escHtml(f.name)}</span>
-        <button class="feed-remove" onclick="removeFeed('${f.id}')" title="Remove feed">×</button>
-      </div>
-      <div class="feed-url" title="${f.url}">${escHtml(f.url)}</div>
-      <div class="feed-bottom">
-        <div class="feed-status">
-          <div class="status-dot ${statusMap[f.status] || 'loading'}"></div>
-          <span style="font-size:11px; color:var(--text-muted)">${typeof statusLabel[f.status] === 'function' ? statusLabel[f.status](f) : (statusLabel[f.status] || '...')}</span>
-        </div>
-      </div>`;
-    frag.appendChild(div);
+    div.innerHTML = feedCardHtml(f, true);
+    frag.appendChild(div.firstElementChild);
   });
   el.appendChild(frag);
+}
+
+function renderBuiltinFeedList() {
+  const el = document.getElementById('builtin-feed-list');
+  el.innerHTML = BUILTIN_FEEDS.map(f => feedCardHtml(f, false)).join('');
 }
 
 // ── RSS FETCH ──
 async function fetchFeed(feed) {
   feed.status = 'loading';
   renderFeedList();
+  renderBuiltinFeedList();
 
   try {
     const res = await fetch('/api/feed?url=' + encodeURIComponent(feed.url));
@@ -856,6 +889,7 @@ async function fetchFeed(feed) {
   }
 
   renderFeedList();
+  renderBuiltinFeedList();
   renderItems();
   updateSelectedCount();
 }
@@ -865,9 +899,9 @@ async function refreshFeeds() {
   fetchInProgress = true;
   allItems = [];
   selectedIds.clear();
-  // Always fetch FDA built-in sources first
-  await Promise.all([fetchFdaDental(), fetchFdaAlerts()]);
-  // Then fetch user RSS feeds
+  // Always fetch FDA + other built-in sources first
+  await Promise.all([fetchFdaDental(), fetchFdaAlerts(), ...BUILTIN_FEEDS.map(fetchFeed)]);
+  // Then fetch user-added RSS feeds
   for (const feed of feeds) await fetchFeed(feed);
   fetchInProgress = false;
 }
@@ -1003,7 +1037,8 @@ function renderItems() {
   const pods = visible.filter(i => i.feedType === 'podcast');
   const fda  = visible.filter(i => i.feedType === 'fda');
 
-  meta.innerHTML = `<strong>${visible.length}</strong> items across ${feeds.length + 2} source${feeds.length + 2 !== 1 ? 's' : ''}`;
+  const sourceCount = feeds.length + BUILTIN_FEEDS.length + 2;
+  meta.innerHTML = `<strong>${visible.length}</strong> items across ${sourceCount} source${sourceCount !== 1 ? 's' : ''}`;
 
   // Remove only dynamic content, keep the empty node in place
   scroll.querySelectorAll('.item-card, .section-divider').forEach(n => n.remove());
