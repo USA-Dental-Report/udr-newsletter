@@ -9,43 +9,6 @@
 
 const DENTAL_TERMS = /dental|dent|oral|tooth|teeth|implant|crown|filling|composite|curing|autoclave|steriliz|endodontic|periodon|orthodon|cbct|intraoral|x-ray|radiograph/i;
 
-const NAMED_ENTITIES = {
-  lt: '<', gt: '>', amp: '&', quot: '"', apos: "'",
-  nbsp: ' ', mdash: '—', ndash: '–', hellip: '…',
-  lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”',
-  copy: '©', reg: '®', trade: '™',
-};
-
-function decodeXmlEntities(str) {
-  return str
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, entity) => {
-      if (entity[0] === '#') {
-        const code = entity[1].toLowerCase() === 'x'
-          ? parseInt(entity.slice(2), 16)
-          : parseInt(entity.slice(1), 10);
-        return Number.isNaN(code) ? match : String.fromCodePoint(code);
-      }
-      const value = NAMED_ENTITIES[entity.toLowerCase()];
-      return value === undefined ? match : value;
-    });
-}
-
-function extractTag(block, tag) {
-  const match = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, 'i'));
-  return match ? decodeXmlEntities(match[1].trim()) : '';
-}
-
-function parseRssItems(xml) {
-  const itemBlocks = xml.match(/<item>[\s\S]*?<\/item>/gi) || [];
-  return itemBlocks.map(block => ({
-    title: extractTag(block, 'title'),
-    link: extractTag(block, 'link'),
-    pubDate: extractTag(block, 'pubDate'),
-    description: extractTag(block, 'description'),
-  }));
-}
-
 export default async function handler(req, res) {
   const { type, from, to } = req.query;
 
@@ -68,20 +31,28 @@ export default async function handler(req, res) {
     }
 
     if (type === 'alerts') {
-      const ALERTS_RSS = 'https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/medwatch-safety-alerts/rss.xml';
-      // www.fda.gov sits behind bot protection that 403s requests without
-      // browser-like headers, unlike the api.fda.gov open-data endpoints.
-      const response = await fetch(ALERTS_RSS, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-          'Accept': 'application/rss+xml, application/xml, text/xml, */*',
-        },
-      });
-      if (!response.ok) {
-        throw new Error(`FDA RSS feed ${response.status}`);
+      // Previously scraped www.fda.gov's MedWatch RSS page, but that URL now
+      // 404s (FDA restructured the site). Use the structured openFDA device
+      // enforcement (recalls) API instead — same api.fda.gov domain the
+      // 510(k) source already relies on, with no RSS-page bot protection or
+      // URL-rot risk.
+      const url = 'https://api.fda.gov/device/enforcement.json?limit=100&sort=report_date:desc';
+      const response = await fetch(url);
+      if (response.status === 404) {
+        // openFDA returns 404 when a search matches zero records — not an error.
+        return res.status(200).json({ status: 'ok', items: [] });
       }
-      const xml = await response.text();
-      const allItems = parseRssItems(xml);
+      if (!response.ok) {
+        throw new Error(`FDA API ${response.status}`);
+      }
+      const data = await response.json();
+
+      const allItems = (data.results || []).map(r => ({
+        title: `${r.recalling_firm ? r.recalling_firm + ': ' : ''}${r.product_description || 'Device recall'}`.slice(0, 200),
+        link: 'https://www.fda.gov/medical-devices/medical-device-recalls',
+        pubDate: r.report_date ? `${r.report_date.slice(0,4)}-${r.report_date.slice(4,6)}-${r.report_date.slice(6,8)}` : '',
+        description: r.reason_for_recall || '',
+      }));
 
       const items = allItems.filter(item =>
         DENTAL_TERMS.test((item.title || '') + ' ' + (item.description || ''))
