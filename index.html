@@ -30,6 +30,9 @@
   --fda-bg: #f3eefb;
   --fda-border: #c9aeed;
   --fda-text: #4a1f7a;
+  --email-bg: #fdf3e3;
+  --email-border: #eac878;
+  --email-text: #7a5a12;
   --danger-bg: #fdf0f0;
   --danger-text: #7a1f1f;
   --radius: 7px;
@@ -141,6 +144,12 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text-primar
 .type-badge.news { background: var(--news-bg); color: var(--news-text); border: 1px solid var(--news-border); }
 .type-badge.podcast { background: var(--pod-bg); color: var(--pod-text); border: 1px solid var(--pod-border); }
 .type-badge.fda { background: var(--fda-bg); color: var(--fda-text); border: 1px solid var(--fda-border); }
+.type-badge.email { background: var(--email-bg); color: var(--email-text); border: 1px solid var(--email-border); }
+.item-delete-btn {
+  border: none; background: none; color: var(--text-muted); font-size: 13px;
+  cursor: pointer; padding: 0 4px; line-height: 1; margin-left: auto;
+}
+.item-delete-btn:hover { color: var(--danger-text); }
 
 .feed-empty { padding: 2rem 1rem; text-align: center; color: var(--text-muted); font-size: 12.5px; line-height: 1.6; }
 
@@ -489,11 +498,32 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text-primar
           <span class="feed-label" style="color:var(--fda-text);">CDRH Safety Alerts</span>
           <span class="builtin-lock">&#x1F512;</span>
         </div>
-        <div class="feed-url">FDA MedWatch RSS &middot; device recalls &amp; alerts</div>
+        <div class="feed-url">openFDA API &middot; device recalls, filtered to dental terms</div>
         <div class="feed-bottom">
           <div class="feed-status">
             <div class="status-dot" id="fdaalerts-dot"></div>
             <span style="font-size:11px; color:var(--text-muted)" id="fdaalerts-status">Pending</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Emailed articles -->
+    <div style="border-top: 1px solid var(--border); padding: 0.5rem;">
+      <div style="display:flex; align-items:center; justify-content:space-between; padding: 0.375rem 0.25rem;">
+        <div style="font-size:10px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; color:var(--text-muted);">Emailed articles</div>
+        <button class="btn-ghost" style="font-size:10.5px; padding:2px 6px;" onclick="clearEmailedArticles()" title="Remove all emailed articles">Clear</button>
+      </div>
+      <div class="feed-item builtin">
+        <div class="feed-item-top">
+          <span class="type-badge email">MAIL</span>
+          <span class="feed-label" style="color:var(--email-text);">Forwarded articles</span>
+        </div>
+        <div class="feed-url">Forward from Feedly (or any mail client) to your inbox address to add them here</div>
+        <div class="feed-bottom">
+          <div class="feed-status">
+            <div class="status-dot" id="emailed-dot"></div>
+            <span style="font-size:11px; color:var(--text-muted)" id="emailed-status">Pending</span>
           </div>
         </div>
       </div>
@@ -907,7 +937,7 @@ async function refreshFeeds() {
   allItems = [];
   selectedIds.clear();
   // Always fetch FDA + other built-in sources first
-  await Promise.all([fetchFdaDental(), fetchFdaAlerts(), ...BUILTIN_FEEDS.map(fetchFeed)]);
+  await Promise.all([fetchFdaDental(), fetchFdaAlerts(), fetchEmailedArticles(), ...BUILTIN_FEEDS.map(fetchFeed)]);
   // Then fetch user-added RSS feeds
   for (const feed of feeds) await fetchFeed(feed);
   fetchInProgress = false;
@@ -1020,6 +1050,80 @@ async function fetchFdaAlerts() {
   updateSelectedCount();
 }
 
+async function fetchEmailedArticles() {
+  const dot = document.getElementById('emailed-dot');
+  const status = document.getElementById('emailed-status');
+  dot.className = 'status-dot loading';
+  status.textContent = 'Fetching...';
+
+  const SOURCE_ID = '__emailed__';
+  allItems = allItems.filter(i => i.feedId !== SOURCE_ID);
+
+  try {
+    const res = await fetch('/api/inbox');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || data.error || 'Network error');
+    if (data.status !== 'ok') throw new Error(data.message || 'Inbox error');
+
+    const newItems = data.items.map(item => ({
+      id: item.id,
+      feedId: SOURCE_ID,
+      feedName: 'Emailed article',
+      feedType: 'news',
+      emailed: true,
+      title: item.title || '(no subject)',
+      link: item.link || '',
+      pubDate: item.receivedAt || '',
+      description: item.description || ''
+    }));
+
+    allItems = allItems.concat(newItems);
+    newItems.forEach(i => selectedIds.add(i.id));
+
+    dot.className = 'status-dot ok';
+    status.textContent = newItems.length ? `${newItems.length} emailed` : 'None yet';
+  } catch (err) {
+    dot.className = 'status-dot err';
+    status.textContent = 'Error fetching';
+    console.warn('Emailed articles fetch error:', err.message);
+  }
+
+  renderItems();
+  updateSelectedCount();
+}
+
+async function clearEmailedArticles() {
+  if (!confirm('Remove all emailed articles? This cannot be undone.')) return;
+  try {
+    const res = await fetch('/api/inbox?all=1', { method: 'DELETE' });
+    if (!res.ok) throw new Error('Network error');
+  } catch (err) {
+    showError('Could not clear emailed articles — try again.');
+    return;
+  }
+  allItems = allItems.filter(i => i.feedId !== '__emailed__');
+  selectedIds.forEach(id => { if (id.startsWith('email_')) selectedIds.delete(id); });
+  document.getElementById('emailed-status').textContent = 'None yet';
+  renderItems();
+  updateSelectedCount();
+}
+
+async function deleteEmailedItem(id) {
+  try {
+    const res = await fetch('/api/inbox?id=' + encodeURIComponent(id), { method: 'DELETE' });
+    if (!res.ok) throw new Error('Network error');
+  } catch (err) {
+    showError('Could not remove that article — try again.');
+    return;
+  }
+  allItems = allItems.filter(i => i.id !== id);
+  selectedIds.delete(id);
+  const remaining = allItems.filter(i => i.feedId === '__emailed__').length;
+  document.getElementById('emailed-status').textContent = remaining ? `${remaining} emailed` : 'None yet';
+  renderItems();
+  updateSelectedCount();
+}
+
 function stripHtml(html) {
   const d = document.createElement('div');
   d.innerHTML = html;
@@ -1045,7 +1149,7 @@ function renderItems() {
   const pods = visible.filter(i => i.feedType === 'podcast');
   const fda  = visible.filter(i => i.feedType === 'fda');
 
-  const sourceCount = feeds.length + BUILTIN_FEEDS.length + 2;
+  const sourceCount = feeds.length + BUILTIN_FEEDS.length + 3;
   meta.innerHTML = `<strong>${visible.length}</strong> items across ${sourceCount} source${sourceCount !== 1 ? 's' : ''}`;
 
   // Remove only dynamic content, keep the empty node in place
@@ -1091,9 +1195,10 @@ function itemCard(item) {
     <div class="item-body">
       <div class="item-title">${escHtml(item.title)}</div>
       <div class="item-meta">
-        <span class="type-badge ${item.feedType}" style="font-size:9.5px; padding:1px 5px;">${item.feedType === 'podcast' ? 'podcast' : item.feedType === 'fda' ? 'FDA' : 'news'}</span>
+        <span class="type-badge ${item.emailed ? 'email' : item.feedType}" style="font-size:9.5px; padding:1px 5px;">${item.emailed ? 'mail' : item.feedType === 'podcast' ? 'podcast' : item.feedType === 'fda' ? 'FDA' : 'news'}</span>
         <span class="item-source">${escHtml(item.feedName)}</span>
         ${date ? `<span class="item-date">${date}</span>` : ''}
+        ${item.emailed ? `<button class="item-delete-btn" title="Remove" onclick="event.stopPropagation(); deleteEmailedItem('${item.id}')">&times;</button>` : ''}
       </div>
       ${item.description ? `<div class="item-desc">${escHtml(item.description)}</div>` : ''}
     </div>

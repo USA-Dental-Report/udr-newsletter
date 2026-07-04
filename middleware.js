@@ -3,6 +3,14 @@ export const config = {
 };
 
 export default function middleware(req) {
+  // The Cloudflare email worker posts here directly and can't present the
+  // site's Basic Auth credentials — it authenticates with its own shared
+  // secret instead, checked inside api/inbox.js.
+  const { pathname } = new URL(req.url);
+  if (pathname === '/api/inbox' && req.method === 'POST') {
+    return;
+  }
+
   const user = process.env.BASIC_AUTH_USER;
   const pass = process.env.BASIC_AUTH_PASS;
 
