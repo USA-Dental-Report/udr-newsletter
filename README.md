@@ -4,6 +4,7 @@ Weekly content generation tool for USA Dental Report. Pulls from RSS feeds + FDA
 
 - LinkedIn newsletter article
 - Beehiiv email newsletter
+- Substack newsletter
 - 5 LinkedIn posts (Mon–Fri) with Buffer links
 
 ## Project structure

@@ -567,6 +567,10 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text-primar
           <span class="otab-label">Beehiiv</span>
           <span class="otab-status" id="ostatus-beehiiv"></span>
         </button>
+        <button class="otab" id="otab-substack" onclick="switchOutput('substack', this)">
+          <span class="otab-label">Substack</span>
+          <span class="otab-status" id="ostatus-substack"></span>
+        </button>
         <button class="otab" id="otab-posts" onclick="switchOutput('posts', this)">
           <span class="otab-label"><span class="otab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></span>Post</span>
           <span class="otab-status" id="ostatus-posts"></span>
@@ -584,6 +588,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text-primar
           <div class="progress-list" id="progress-list">
             <div class="progress-item" id="prog-linkedin"><span class="prog-dot idle"></span> LinkedIn article</div>
             <div class="progress-item" id="prog-beehiiv"><span class="prog-dot idle"></span> Beehiiv email</div>
+            <div class="progress-item" id="prog-substack"><span class="prog-dot idle"></span> Substack newsletter</div>
             <div class="progress-item" id="prog-posts"><span class="prog-dot idle"></span> LinkedIn posts</div>
           </div>
         </div>
@@ -591,6 +596,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text-primar
         <!-- Per-output text areas -->
         <div class="output-text" id="out-linkedin" style="display:none;"></div>
         <div class="output-text" id="out-beehiiv" style="display:none;"></div>
+        <div class="output-text" id="out-substack" style="display:none;"></div>
         <div class="output-posts" id="out-posts" style="display:none;"></div>
       </div>
 
@@ -727,7 +733,7 @@ let feeds = [];
 let allItems = [];
 let selectedIds = new Set();
 let currentFilter = 'all';
-let currentOutputs = { linkedin: '', beehiiv: '', posts: [] };
+let currentOutputs = { linkedin: '', beehiiv: '', substack: '', posts: [] };
 let currentOutputTab = 'linkedin';
 let fetchInProgress = false;
 
@@ -1216,6 +1222,35 @@ WHAT WE\'RE WATCHING
 ${contentBlock}${notes ? `EDITOR NOTES: ${notes}\n\n` : ''}Write the full Beehiiv email now. Make it feel like the email version people actually look forward to opening.`;
 }
 
+function buildSubstackPrompt(contentBlock) {
+  const notes = document.getElementById('editorial-notes').value.trim();
+  const weekStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  return `You are the editorial voice of USA Dental Report writing this week's Substack post for the week of ${weekStr}.
+
+Substack readers are here for a point of view, not a roundup — they already saw the news elsewhere. Unlike the Beehiiv email (which covers the whole week broadly), this is a single-theme essay: pick the ONE most significant story or trend from this week's content and go deep on it.
+
+LENGTH: 900–1,400 words
+FORMAT: Personal essay (plain text; use line breaks and em dashes for structure — no markdown symbols, no ALL CAPS section headers)
+TONE: First-person, opinionated, and personal — like a respected industry columnist thinking out loud, not a news digest
+
+STRUCTURE:
+TITLE: [a strong, specific headline for this essay — not generic]
+SUBTITLE: [one line expanding on the title, Substack-style]
+
+[Open with why this topic caught your attention this week]
+
+[The deep dive — explain the story, add context and history, argue a clear point of view about what it means for dentistry]
+
+[A section reflecting on the broader implication — for clinicians, DSOs, or the industry's direction]
+
+ALSO WORTH YOUR TIME:
+[2–4 short bullet mentions of other stories/podcast episodes from this week that didn't make the main essay, one line each]
+
+[Personal sign-off, 1–2 sentences, inviting replies/comments]
+
+${contentBlock}${notes ? `EDITOR NOTES: ${notes}\n\n` : ''}Write the full Substack essay now. Pick one real angle and commit to it — don't hedge across multiple topics.`;
+}
+
 function buildPostsPrompt(contentBlock) {
   const notes = document.getElementById('editorial-notes').value.trim();
   const weekStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
@@ -1294,26 +1329,27 @@ async function generate() {
 
   placeholder.style.display = 'none';
   loading.style.display = 'flex';
-  ['linkedin','beehiiv','posts'].forEach(k => {
+  ['linkedin','beehiiv','substack','posts'].forEach(k => {
     document.getElementById('out-' + k).style.display = 'none';
   });
   document.getElementById('gen-btn').disabled = true;
   document.getElementById('gen-btn').textContent = 'Generating...';
   document.getElementById('copy-btn').disabled = true;
   document.getElementById('word-count').textContent = '—';
-  currentOutputs = { linkedin: '', beehiiv: '', posts: [] };
+  currentOutputs = { linkedin: '', beehiiv: '', substack: '', posts: [] };
 
   const model = document.getElementById('model-select').value;
   const contentBlock = buildContentBlock();
   const SYSTEM = 'You are the senior editorial voice of USA Dental Report. Write with authority, depth, and genuine insight for dental professionals — clinicians, DSO operators, dental industry executives, and KOLs.';
 
   const jobs = [
-    { key: 'linkedin', label: 'LinkedIn article',  prompt: buildLinkedInPrompt(contentBlock), tokens: 2000 },
-    { key: 'beehiiv',  label: 'Beehiiv email',     prompt: buildBeehiivPrompt(contentBlock),  tokens: 3000 },
+    { key: 'linkedin', label: 'LinkedIn article',  prompt: buildLinkedInPrompt(contentBlock),  tokens: 2000 },
+    { key: 'beehiiv',  label: 'Beehiiv email',      prompt: buildBeehiivPrompt(contentBlock),   tokens: 3000 },
+    { key: 'substack', label: 'Substack newsletter', prompt: buildSubstackPrompt(contentBlock), tokens: 2500 },
     { key: 'posts',    label: 'LinkedIn posts',     prompt: buildPostsPrompt(contentBlock),    tokens: 4500 },
   ];
 
-  const msgs = ['Drafting LinkedIn article...', 'Writing Beehiiv email...', 'Drafting LinkedIn posts...', 'Finishing up...'];
+  const msgs = ['Drafting LinkedIn article...', 'Writing Beehiiv email...', 'Writing Substack newsletter...', 'Drafting LinkedIn posts...', 'Finishing up...'];
   let mi = 0;
   document.getElementById('loading-msg').textContent = msgs[0];
   const msgTimer = setInterval(() => { mi = Math.min(mi+1, msgs.length-1); document.getElementById('loading-msg').textContent = msgs[mi]; }, 6000);
@@ -1391,7 +1427,7 @@ function switchOutput(key, el) {
 }
 
 function showOutputTab(key) {
-  ['linkedin','beehiiv','posts'].forEach(k => {
+  ['linkedin','beehiiv','substack','posts'].forEach(k => {
     document.getElementById('out-' + k).style.display = 'none';
   });
   const placeholder = document.getElementById('output-placeholder');
