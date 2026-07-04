@@ -361,6 +361,8 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text-primar
 }
 .gen-btn:hover { background: #144060; }
 .gen-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.gen-controls { display: flex; align-items: center; gap: 0.5rem; }
+#gen-scope { width: auto; }
 
 .error-strip {
   background: var(--danger-bg); border-top: 1px solid #f5c0c0;
@@ -572,7 +574,16 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text-primar
 
     <div class="generate-bar">
       <div class="selected-count" id="selected-count"><strong>0</strong> items selected</div>
-      <button class="gen-btn" id="gen-btn" onclick="generate()">Generate all outputs →</button>
+      <div class="gen-controls">
+        <select class="field-select" id="gen-scope" onchange="updateGenBtnLabel()">
+          <option value="all">All outputs</option>
+          <option value="linkedin">LinkedIn Article only</option>
+          <option value="beehiiv">Beehiiv only</option>
+          <option value="substack">Substack only</option>
+          <option value="posts">LinkedIn Posts only</option>
+        </select>
+        <button class="gen-btn" id="gen-btn" onclick="generate()">Generate all outputs →</button>
+      </div>
     </div>
   </div>
 
@@ -611,7 +622,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text-primar
       <div class="output-area" id="output-area" style="flex:1; overflow-y:auto;">
         <div class="output-placeholder" id="output-placeholder">
           <div style="font-size:1.75rem; margin-bottom:0.5rem;">📰</div>
-          Select content on the left, then click Generate all outputs.
+          Select content on the left, choose what to generate, then click Generate.
         </div>
         <div class="output-loading" id="output-loading" style="display:none;">
           <div class="output-loading-row"><div class="spinner"></div><span id="loading-msg">Starting...</span></div>
@@ -714,7 +725,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text-primar
         <div class="field-label">Schedule status</div>
         <div class="toggle-row">
           <span>Auto-generate on Sundays</span>
-          <label class="toggle"><input type="checkbox" id="schedule-toggle" checked onchange="saveSchedule()"><span class="toggle-track"></span></label>
+          <label class="toggle"><input type="checkbox" id="schedule-toggle" onchange="saveSchedule()"><span class="toggle-track"></span></label>
         </div>
       </div>
 
@@ -781,6 +792,7 @@ function init() {
   renderBuiltinFeedList();
   refreshFeeds();
   startScheduleChecker();
+  updateGenBtnLabel();
 }
 
 // ── FEEDS ──
@@ -1421,9 +1433,19 @@ ${contentBlock}${notes ? `EDITOR NOTES: ${notes}\n\n` : ''}Write all ${count} po
 }
 
 // ── GENERATE ──
+const OUTPUT_LABELS = { linkedin: 'LinkedIn Article', beehiiv: 'Beehiiv', substack: 'Substack', posts: 'LinkedIn Posts' };
+
+function updateGenBtnLabel() {
+  const scope = document.getElementById('gen-scope').value;
+  const label = scope === 'all' ? 'Generate all outputs' : `Generate ${OUTPUT_LABELS[scope]}`;
+  document.getElementById('gen-btn').textContent = label + ' →';
+}
+
 async function generate() {
   const selected = allItems.filter(i => selectedIds.has(i.id));
   if (!selected.length) { showError('Select at least one item before generating.'); return; }
+
+  const scope = document.getElementById('gen-scope').value;
 
   clearError();
   switchStab('output', null);
@@ -1440,20 +1462,26 @@ async function generate() {
   document.getElementById('gen-btn').textContent = 'Generating...';
   document.getElementById('copy-btn').disabled = true;
   document.getElementById('word-count').textContent = '—';
-  currentOutputs = { linkedin: '', beehiiv: '', substack: '', posts: [] };
 
   const model = document.getElementById('model-select').value;
   const contentBlock = buildContentBlock();
   const SYSTEM = 'You are the senior editorial voice of USA Dental Report. Write with authority, depth, and genuine insight for dental professionals — clinicians, DSO operators, dental industry executives, and KOLs.';
 
-  const jobs = [
+  const allJobs = [
     { key: 'linkedin', label: 'LinkedIn article',  prompt: buildLinkedInPrompt(contentBlock),  tokens: 2000 },
     { key: 'beehiiv',  label: 'Beehiiv email',      prompt: buildBeehiivPrompt(contentBlock),   tokens: 3000 },
     { key: 'substack', label: 'Substack newsletter', prompt: buildSubstackPrompt(contentBlock), tokens: 2500 },
     { key: 'posts',    label: 'LinkedIn posts',     prompt: buildPostsPrompt(contentBlock),    tokens: 4500 },
   ];
+  const jobs = scope === 'all' ? allJobs : allJobs.filter(j => j.key === scope);
+  const jobKeys = new Set(jobs.map(j => j.key));
+  ['linkedin','beehiiv','substack','posts'].forEach(k => {
+    document.getElementById('prog-' + k).style.display = jobKeys.has(k) ? 'flex' : 'none';
+  });
 
-  const msgs = ['Drafting LinkedIn article...', 'Writing Beehiiv email...', 'Writing Substack newsletter...', 'Drafting LinkedIn posts...', 'Finishing up...'];
+  jobs.forEach(job => { currentOutputs[job.key] = job.key === 'posts' ? [] : ''; });
+
+  const msgs = [...jobs.map(j => `Drafting ${j.label}...`), 'Finishing up...'];
   let mi = 0;
   document.getElementById('loading-msg').textContent = msgs[0];
   const msgTimer = setInterval(() => { mi = Math.min(mi+1, msgs.length-1); document.getElementById('loading-msg').textContent = msgs[mi]; }, 6000);
@@ -1490,7 +1518,7 @@ async function generate() {
   clearInterval(msgTimer);
   loading.style.display = 'none';
   document.getElementById('gen-btn').disabled = false;
-  document.getElementById('gen-btn').textContent = 'Generate all outputs →';
+  updateGenBtnLabel();
 
   if (anyError) showError('One or more outputs had errors — check individual tabs.');
 
@@ -1674,8 +1702,8 @@ function getNextSunday(hour) {
 
 function updateScheduleBadge() {
   try {
-    const s = JSON.parse(localStorage.getItem(STORAGE_SCHEDULE)) || { enabled: true, hour: 19 };
-    const enabled = s.enabled !== false;
+    const s = JSON.parse(localStorage.getItem(STORAGE_SCHEDULE)) || { enabled: false, hour: 19 };
+    const enabled = s.enabled === true;
     const dot = document.getElementById('schedule-dot');
     const label = document.getElementById('schedule-label');
     if (enabled) {
@@ -1713,8 +1741,8 @@ function startScheduleChecker() {
   // Check every minute if it's time to run
   setInterval(() => {
     try {
-      const s = JSON.parse(localStorage.getItem(STORAGE_SCHEDULE)) || { enabled: true, hour: 19 };
-      if (!s.enabled) return;
+      const s = JSON.parse(localStorage.getItem(STORAGE_SCHEDULE)) || { enabled: false, hour: 19 };
+      if (s.enabled !== true) return;
 
       const now = new Date();
       if (now.getDay() !== 0) return; // Only Sunday
