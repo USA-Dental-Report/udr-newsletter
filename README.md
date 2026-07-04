@@ -30,11 +30,10 @@ These are hardcoded into the app (locked, non-removable in the UI) and are alway
 | Source | Type | URL |
 |---|---|---|
 | ADA News | News | `http://www.ada.org/en/ada-news-rss` |
-| Becker's Dental | News | `https://www.beckersdental.com/?format=feed` |
 | Dental Podcast | Podcast | `https://dentalpodcast.org/feed/?post_type=podcast-episode` |
 | USA Dental Report | News | `https://rss.beehiiv.com/feeds/tuw0IXKQhc.xml` |
 | Dental 510(k) Clearances | FDA | openFDA API — `advisory_committee: Dental` |
-| CDRH Safety Alerts | FDA | FDA MedWatch RSS — device recalls & alerts |
+| CDRH Safety Alerts | FDA | openFDA API — `device/enforcement` recalls, filtered to dental terms |
 
 Sources added via the UI are stored in the browser's `localStorage`, not server-side — they won't carry over across devices/browsers or between Vercel preview deployment URLs. To add or remove a built-in source permanently, edit the `BUILTIN_FEEDS` array in `index.html` (or the FDA-specific logic in `api/fda.js`) and redeploy.
 
