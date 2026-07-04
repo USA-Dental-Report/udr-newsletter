@@ -10,14 +10,26 @@
 
 const PRIVATE_HOST_RE = /^(localhost|127\.|0\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|\[?::1\]?|\[?fc|\[?fd|\[?fe80)/i;
 
+const NAMED_ENTITIES = {
+  lt: '<', gt: '>', amp: '&', quot: '"', apos: "'",
+  nbsp: ' ', mdash: '—', ndash: '–', hellip: '…',
+  lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”',
+  copy: '©', reg: '®', trade: '™',
+};
+
 function decodeXmlEntities(str) {
   return str
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
+    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, entity) => {
+      if (entity[0] === '#') {
+        const code = entity[1].toLowerCase() === 'x'
+          ? parseInt(entity.slice(2), 16)
+          : parseInt(entity.slice(1), 10);
+        return Number.isNaN(code) ? match : String.fromCodePoint(code);
+      }
+      const value = NAMED_ENTITIES[entity.toLowerCase()];
+      return value === undefined ? match : value;
+    });
 }
 
 function extractTag(block, tag) {
