@@ -714,7 +714,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text-primar
         <div class="field-label">Schedule status</div>
         <div class="toggle-row">
           <span>Auto-generate on Sundays</span>
-          <label class="toggle"><input type="checkbox" id="schedule-toggle" checked onchange="saveSchedule()"><span class="toggle-track"></span></label>
+          <label class="toggle"><input type="checkbox" id="schedule-toggle" onchange="saveSchedule()"><span class="toggle-track"></span></label>
         </div>
       </div>
 
@@ -1674,8 +1674,8 @@ function getNextSunday(hour) {
 
 function updateScheduleBadge() {
   try {
-    const s = JSON.parse(localStorage.getItem(STORAGE_SCHEDULE)) || { enabled: true, hour: 19 };
-    const enabled = s.enabled !== false;
+    const s = JSON.parse(localStorage.getItem(STORAGE_SCHEDULE)) || { enabled: false, hour: 19 };
+    const enabled = s.enabled === true;
     const dot = document.getElementById('schedule-dot');
     const label = document.getElementById('schedule-label');
     if (enabled) {
@@ -1713,8 +1713,8 @@ function startScheduleChecker() {
   // Check every minute if it's time to run
   setInterval(() => {
     try {
-      const s = JSON.parse(localStorage.getItem(STORAGE_SCHEDULE)) || { enabled: true, hour: 19 };
-      if (!s.enabled) return;
+      const s = JSON.parse(localStorage.getItem(STORAGE_SCHEDULE)) || { enabled: false, hour: 19 };
+      if (s.enabled !== true) return;
 
       const now = new Date();
       if (now.getDay() !== 0) return; // Only Sunday
