@@ -33,6 +33,9 @@
   --email-bg: #fdf3e3;
   --email-border: #eac878;
   --email-text: #7a5a12;
+  --csv-bg: #fdeee3;
+  --csv-border: #f0b98a;
+  --csv-text: #8a4a12;
   --danger-bg: #fdf0f0;
   --danger-text: #7a1f1f;
   --radius: 7px;
@@ -145,6 +148,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text-primar
 .type-badge.podcast { background: var(--pod-bg); color: var(--pod-text); border: 1px solid var(--pod-border); }
 .type-badge.fda { background: var(--fda-bg); color: var(--fda-text); border: 1px solid var(--fda-border); }
 .type-badge.email { background: var(--email-bg); color: var(--email-text); border: 1px solid var(--email-border); }
+.type-badge.csv { background: var(--csv-bg); color: var(--csv-text); border: 1px solid var(--csv-border); }
 .item-delete-btn {
   border: none; background: none; color: var(--text-muted); font-size: 13px;
   cursor: pointer; padding: 0 4px; line-height: 1; margin-left: auto;
@@ -531,6 +535,29 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text-primar
       </div>
     </div>
 
+    <!-- CSV import -->
+    <div style="border-top: 1px solid var(--border); padding: 0.5rem;">
+      <div style="display:flex; align-items:center; justify-content:space-between; padding: 0.375rem 0.25rem;">
+        <div style="font-size:10px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; color:var(--text-muted);">CSV import</div>
+        <button class="btn-ghost hidden" style="font-size:10.5px; padding:2px 6px;" id="csv-clear-btn" onclick="clearCsvImport()" title="Remove imported CSV articles">Clear</button>
+      </div>
+      <div class="feed-item builtin">
+        <div class="feed-item-top">
+          <span class="type-badge csv">CSV</span>
+          <span class="feed-label" style="color:var(--csv-text);" id="csv-feed-label">No file loaded</span>
+        </div>
+        <div class="feed-url" id="csv-feed-desc">Upload a CSV of article leads — Claude recommends the ones worth including in the newsletter.</div>
+        <div class="feed-bottom">
+          <div class="feed-status">
+            <div class="status-dot" id="csv-dot"></div>
+            <span style="font-size:11px; color:var(--text-muted)" id="csv-status">Pending</span>
+          </div>
+        </div>
+      </div>
+      <input type="file" id="csv-file-input" accept=".csv,text/csv" style="display:none" onchange="handleCsvFileSelect(event)" />
+      <button class="btn-add" style="width:100%; margin-top:0.375rem;" onclick="document.getElementById('csv-file-input').click()">Upload CSV</button>
+    </div>
+
     <div class="add-feed-form hidden" id="add-form">
       <div class="form-row">
         <input class="form-input" id="feed-url" placeholder="RSS feed URL..." />
@@ -781,15 +808,20 @@ const STORAGE_FEEDS = 'udr_feeds';
 const STORAGE_SETTINGS = 'udr_settings';
 const STORAGE_SCHEDULE = 'udr_schedule';
 const STORAGE_LASTRUN = 'udr_lastrun';
+const STORAGE_CSV = 'udr_csv';
+
+let csvImport = null; // { fileName, rows, recommended: [{index, reason}], status: 'loading'|'ok'|'err' }
 
 // ── INIT ──
 function init() {
   loadFeeds();
   loadSettings();
   loadSchedule();
+  loadCsvImport();
   updateScheduleBadge();
   renderLastRun();
   renderBuiltinFeedList();
+  renderCsvSection();
   refreshFeeds();
   startScheduleChecker();
   updateGenBtnLabel();
@@ -950,6 +982,10 @@ async function refreshFeeds() {
   selectedIds.clear();
   // Always fetch FDA + other built-in sources first
   await Promise.all([fetchFdaDental(), fetchFdaAlerts(), fetchEmailedArticles(), ...BUILTIN_FEEDS.map(fetchFeed)]);
+  // Re-apply any previously-imported CSV articles (no re-analysis, just re-render from cache)
+  applyCsvItems();
+  renderItems();
+  updateSelectedCount();
   // Then fetch user-added RSS feeds
   for (const feed of feeds) await fetchFeed(feed);
   fetchInProgress = false;
@@ -1136,6 +1172,199 @@ async function deleteEmailedItem(id) {
   updateSelectedCount();
 }
 
+// ── CSV IMPORT ──
+function loadCsvImport() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_CSV));
+    if (saved && Array.isArray(saved.rows) && saved.rows.length) csvImport = saved;
+  } catch { csvImport = null; }
+}
+
+function saveCsvImport() {
+  if (csvImport) localStorage.setItem(STORAGE_CSV, JSON.stringify(csvImport));
+  else localStorage.removeItem(STORAGE_CSV);
+}
+
+// Minimal RFC 4180 CSV parser — handles quoted fields, escaped quotes, and commas/newlines inside quotes.
+function parseCsv(text) {
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i], next = text[i + 1];
+    if (inQuotes) {
+      if (c === '"' && next === '"') { field += '"'; i++; }
+      else if (c === '"') { inQuotes = false; }
+      else field += c;
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ',') {
+      row.push(field); field = '';
+    } else if (c === '\r') {
+      // skip
+    } else if (c === '\n') {
+      row.push(field); rows.push(row); row = []; field = '';
+    } else {
+      field += c;
+    }
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.some(f => f.trim() !== ''));
+}
+
+function csvRowsToObjects(rawRows) {
+  if (!rawRows.length) return [];
+  const headers = rawRows[0].map(h => h.trim().toLowerCase());
+  return rawRows.slice(1).map(r => {
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = (r[i] || '').trim());
+    return obj;
+  });
+}
+
+async function handleCsvFileSelect(event) {
+  const file = event.target.files[0];
+  event.target.value = ''; // allow re-selecting the same file later
+  if (!file) return;
+
+  let rows;
+  try {
+    const text = await file.text();
+    rows = csvRowsToObjects(parseCsv(text));
+  } catch (err) {
+    showError('Could not read that CSV file.');
+    return;
+  }
+  if (!rows.length) { showError('That CSV had no rows we could read.'); return; }
+
+  csvImport = { fileName: file.name, rows, recommended: [], status: 'loading' };
+  renderCsvSection();
+
+  try {
+    csvImport.recommended = await analyzeCsvArticles(rows);
+    csvImport.status = 'ok';
+  } catch (err) {
+    csvImport.status = 'err';
+    console.warn('CSV recommendation error:', err.message);
+    showError('Could not get AI recommendations for the CSV — showing all articles unselected for manual review.');
+  }
+
+  saveCsvImport();
+  renderCsvSection();
+  applyCsvItems();
+  renderItems();
+  updateSelectedCount();
+}
+
+async function analyzeCsvArticles(rows) {
+  const model = document.getElementById('model-select')?.value || 'claude-sonnet-4-6';
+  const list = rows.map((r, i) =>
+    `${i}. [${r.company || 'Unknown source'}] (${r.post_type || 'general'}) ${r.headline || '(no headline)'}`
+  ).join('\n');
+
+  const prompt = `Below is a list of ${rows.length} article leads scraped from dental school and dental organization newsrooms. Each line has an index, source institution, post type, and headline.
+
+Recommend which of these are genuinely worth considering for USA Dental Report's weekly newsletter for dental professionals — clinicians, DSO leaders, practice owners, dental school faculty, and industry KOLs. Favor items with real relevance to dentistry: clinical research and innovation, dental education milestones, notable awards/grants, partnerships affecting dental training or care access, dental technology/device news, and dental workforce/industry trends.
+
+Exclude items that are: not actually about dentistry (unrelated campus or department news, non-dental student profiles), generic tag/category listing pages rather than real articles, near-duplicates of the same story, or too thin/generic to be newsletter-worthy.
+
+ARTICLES:
+${list}
+
+Respond with ONLY a JSON object and nothing else — no markdown code fences, no commentary — in this exact shape:
+{"recommended": [{"index": 0, "reason": "one short sentence on why this matters to dental professionals"}]}
+
+Only include indices genuinely worth recommending. It's fine to recommend few or none if the list is weak, and fine to recommend most if the list is strong.`;
+
+  const res = await fetch('/api/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      max_tokens: 2000,
+      system: 'You are the editorial voice of USA Dental Report, a dental trade media publication. You select which article leads are genuinely worth covering in a weekly newsletter for dental professionals.',
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error?.message || `API ${res.status}`); }
+  const data = await res.json();
+  const text = (data.content || []).map(b => b.text || '').join('');
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('Could not parse recommendation response');
+  const parsed = JSON.parse(jsonMatch[0]);
+  if (!Array.isArray(parsed.recommended)) throw new Error('Unexpected recommendation format');
+  return parsed.recommended.filter(r => typeof r.index === 'number' && rows[r.index]);
+}
+
+function applyCsvItems() {
+  const SOURCE_ID = '__csv__';
+  allItems = allItems.filter(i => i.feedId !== SOURCE_ID);
+  if (!csvImport || !csvImport.rows.length) return;
+
+  const recMap = new Map((csvImport.recommended || []).map(r => [r.index, r.reason]));
+
+  const newItems = csvImport.rows.map((r, i) => {
+    const isRec = recMap.has(i);
+    const descParts = [];
+    if (isRec) descParts.push(`Recommended — ${recMap.get(i)}`);
+    if (r.post_type) descParts.push(`Type: ${r.post_type}`);
+    return {
+      id: 'csv_' + i + '_' + hashId(r.article_url || r.headline || String(i)),
+      feedId: SOURCE_ID,
+      feedName: r.company || 'CSV import',
+      feedType: 'news',
+      csv: true,
+      title: r.headline || '(no headline)',
+      link: r.article_url || r.newsroom_url || '',
+      pubDate: r.date_found || '',
+      description: descParts.join(' · '),
+      recommended: isRec
+    };
+  });
+
+  allItems = allItems.concat(newItems);
+  newItems.forEach(i => { if (i.recommended) selectedIds.add(i.id); else selectedIds.delete(i.id); });
+}
+
+function renderCsvSection() {
+  const dot = document.getElementById('csv-dot');
+  const status = document.getElementById('csv-status');
+  const label = document.getElementById('csv-feed-label');
+  const clearBtn = document.getElementById('csv-clear-btn');
+
+  if (!csvImport) {
+    dot.className = 'status-dot';
+    status.textContent = 'Pending';
+    label.textContent = 'No file loaded';
+    clearBtn.classList.add('hidden');
+    return;
+  }
+
+  label.textContent = csvImport.fileName;
+  clearBtn.classList.remove('hidden');
+
+  if (csvImport.status === 'loading') {
+    dot.className = 'status-dot loading';
+    status.textContent = `Analyzing ${csvImport.rows.length} articles...`;
+  } else if (csvImport.status === 'err') {
+    dot.className = 'status-dot err';
+    status.textContent = 'Recommendation failed — review manually';
+  } else {
+    dot.className = 'status-dot ok';
+    const n = (csvImport.recommended || []).length;
+    status.textContent = `${n} of ${csvImport.rows.length} recommended`;
+  }
+}
+
+async function clearCsvImport() {
+  if (!confirm('Remove the imported CSV articles?')) return;
+  csvImport = null;
+  saveCsvImport();
+  allItems = allItems.filter(i => i.feedId !== '__csv__');
+  renderCsvSection();
+  renderItems();
+  updateSelectedCount();
+}
+
 function stripHtml(html) {
   const d = document.createElement('div');
   d.innerHTML = html;
@@ -1161,7 +1390,7 @@ function renderItems() {
   const pods = visible.filter(i => i.feedType === 'podcast');
   const fda  = visible.filter(i => i.feedType === 'fda');
 
-  const sourceCount = feeds.length + BUILTIN_FEEDS.length + 3;
+  const sourceCount = feeds.length + BUILTIN_FEEDS.length + 3 + (csvImport ? 1 : 0);
   meta.innerHTML = `<strong>${visible.length}</strong> items across ${sourceCount} source${sourceCount !== 1 ? 's' : ''}`;
 
   // Remove only dynamic content, keep the empty node in place
@@ -1207,7 +1436,7 @@ function itemCard(item) {
     <div class="item-body">
       <div class="item-title">${escHtml(item.title)}</div>
       <div class="item-meta">
-        <span class="type-badge ${item.emailed ? 'email' : item.feedType}" style="font-size:9.5px; padding:1px 5px;">${item.emailed ? 'mail' : item.feedType === 'podcast' ? 'podcast' : item.feedType === 'fda' ? 'FDA' : 'news'}</span>
+        <span class="type-badge ${item.emailed ? 'email' : item.csv ? 'csv' : item.feedType}" style="font-size:9.5px; padding:1px 5px;">${item.emailed ? 'mail' : item.csv ? 'CSV' : item.feedType === 'podcast' ? 'podcast' : item.feedType === 'fda' ? 'FDA' : 'news'}</span>
         <span class="item-source">${escHtml(item.feedName)}</span>
         ${date ? `<span class="item-date">${date}</span>` : ''}
         ${item.emailed ? `<button class="item-delete-btn" title="Remove" onclick="event.stopPropagation(); deleteEmailedItem('${item.id}')">&times;</button>` : ''}
