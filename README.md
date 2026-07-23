@@ -34,6 +34,7 @@ These are hardcoded into the app (locked, non-removable in the UI) and are alway
 | ADA News | News | `http://www.ada.org/en/ada-news-rss` |
 | Dental Podcast | Podcast | `https://dentalpodcast.org/feed/?post_type=podcast-episode` |
 | USA Dental Report | News | `https://rss.beehiiv.com/feeds/tuw0IXKQhc.xml` |
+| Dentistry Today | News | `https://www.dentistrytoday.com/feed/` |
 | Dental 510(k) Clearances | FDA | openFDA API — `advisory_committee: Dental` |
 | CDRH Safety Alerts | FDA | openFDA API — `device/enforcement` recalls, filtered to dental terms |
 
